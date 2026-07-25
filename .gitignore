@@ -1,0 +1,16 @@
+# Binaries
+/bin/
+*.exe
+
+# Local environment / secrets
+.env
+token.json
+
+# Go build/test artifacts
+*.out
+coverage.*
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
