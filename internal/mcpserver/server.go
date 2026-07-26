@@ -25,6 +25,7 @@ func New(sp *spotify.Client, version string) *server.MCPServer {
 	registerPlaylists(s, sp)
 	registerLibrary(s, sp)
 	registerCatalog(s, sp)
+	registerPodcasts(s, sp)
 	registerTaste(s, sp)
 	return s
 }
@@ -409,6 +410,63 @@ func registerLibrary(s *server.MCPServer, sp *spotify.Client) {
 		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return rawText(sp.SavedAlbums(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+
+	s.AddTool(mcp.NewTool("saved_audiobooks", mcp.WithDescription("List the user's saved audiobooks."),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.SavedAudiobooks(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+}
+
+// ---- podcasts (shows / episodes) -----------------------------------------
+
+func registerPodcasts(s *server.MCPServer, sp *spotify.Client) {
+	s.AddTool(mcp.NewTool("get_show", mcp.WithDescription("Get a podcast show's metadata by id, URI, or URL."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Show id, URI, or URL"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetShow(ctx, id))
+		})
+
+	s.AddTool(mcp.NewTool("get_episode", mcp.WithDescription("Get a podcast episode's metadata by id, URI, or URL."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Episode id, URI, or URL"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetEpisode(ctx, id))
+		})
+
+	s.AddTool(mcp.NewTool("show_episodes", mcp.WithDescription("List a show's episodes (paginated, newest first)."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Show id, URI, or URL")),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.ShowEpisodes(ctx, id, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+
+	s.AddTool(mcp.NewTool("saved_shows", mcp.WithDescription("List the user's saved shows (podcasts). Save/remove via library_save/library_remove."),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.SavedShows(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+
+	s.AddTool(mcp.NewTool("saved_episodes", mcp.WithDescription("List the user's saved episodes."),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.SavedEpisodes(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
 		})
 }
 

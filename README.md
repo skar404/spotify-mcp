@@ -19,8 +19,9 @@ The Feb-2026 migration changed the write endpoints for Development-mode apps:
 
 Removed for Dev mode (this server avoids them): `GET /recommendations`,
 `/artists/{id}/top-tracks`, related-artists, audio-features, `/browse/*`,
-**batch** gets (`GET /tracks?ids=…`), `GET /markets`, `GET /users/{id}`.
-Recommendations are rebuilt from `GET /me/top/*` + search instead.
+**batch** gets (`GET /tracks?ids=…`), `GET /markets`, `GET /users/{id}` and
+`GET /users/{id}/playlists`. Recommendations are rebuilt from
+`GET /me/top/*` + search instead.
 
 Still available and used by the catalog tools: **single-object** gets
 (`GET /tracks/{id}`, `/albums/{id}`, `/artists/{id}`), `/artists/{id}/albums`
@@ -81,10 +82,11 @@ Queue: `queue_add`, `queue_get`, `recently_played`. Playlists:
 `playlist_add_items`, `playlist_remove_items`, `playlist_reorder`,
 `playlist_change_details`, `playlist_upload_cover`. Library/follow:
 `library_save`, `library_remove`, `library_contains`, `saved_tracks`,
-`saved_albums`, `follow_artists`, `unfollow_artists`, `following_list`.
-Catalog: `get_track`, `get_album`, `get_artist`, `album_tracks`,
-`artist_albums`. Taste: `top_items`, `recommend` (optionally seeded with
-`seed_artists` / `seed_tracks` / `genres`).
+`saved_albums`, `saved_audiobooks`, `follow_artists`, `unfollow_artists`,
+`following_list`. Catalog: `get_track`, `get_album`, `get_artist`,
+`album_tracks`, `artist_albums`. Podcasts: `get_show`, `get_episode`,
+`show_episodes`, `saved_shows`, `saved_episodes`. Taste: `top_items`,
+`recommend` (optionally seeded with `seed_artists` / `seed_tracks` / `genres`).
 
 ### Restricted devices (speakers)
 
