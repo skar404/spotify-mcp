@@ -24,6 +24,7 @@ func New(sp *spotify.Client, version string) *server.MCPServer {
 	registerQueue(s, sp)
 	registerPlaylists(s, sp)
 	registerLibrary(s, sp)
+	registerCatalog(s, sp)
 	registerTaste(s, sp)
 	return s
 }
@@ -174,6 +175,29 @@ func registerPlayback(s *server.MCPServer, sp *spotify.Client) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return okText(sp.SetVolume(ctx, req.GetInt("percent", 50), req.GetString("device_id", "")), "Volume set.")
 		})
+
+	s.AddTool(mcp.NewTool("shuffle", mcp.WithDescription("Toggle shuffle on/off for playback."),
+		mcp.WithBoolean("state", mcp.Required(), mcp.Description("true = shuffle on, false = off")),
+		mcp.WithString("device_id", mcp.Description("Target device id (optional)"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return okText(sp.Shuffle(ctx, req.GetBool("state", false), req.GetString("device_id", "")), "Shuffle set.")
+		})
+
+	s.AddTool(mcp.NewTool("repeat", mcp.WithDescription("Set repeat mode: track (repeat one), context (repeat album/playlist), or off."),
+		mcp.WithString("state", mcp.Required(), mcp.Description("track, context, or off"), mcp.Enum("track", "context", "off")),
+		mcp.WithString("device_id", mcp.Description("Target device id (optional)"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			state, err := req.RequireString("state")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return okText(sp.Repeat(ctx, state, req.GetString("device_id", "")), "Repeat set.")
+		})
+
+	s.AddTool(mcp.NewTool("now_playing", mcp.WithDescription("Get the currently-playing item (lighter than playback_state).")),
+		func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.CurrentlyPlaying(ctx))
+		})
 }
 
 // ---- queue ----------------------------------------------------------------
@@ -224,6 +248,31 @@ func registerPlaylists(s *server.MCPServer, sp *spotify.Client) {
 			}
 			return rawText(sp.PlaylistItems(ctx, id, req.GetInt("limit", 100), req.GetInt("offset", 0)))
 		})
+
+	s.AddTool(mcp.NewTool("get_playlist", mcp.WithDescription("Get a playlist's metadata (name, owner, counts). Use playlist_items for the tracks."),
+		mcp.WithString("playlist_id", mcp.Required(), mcp.Description("Playlist id, URI, or URL")),
+		mcp.WithString("fields", mcp.Description("Optional Spotify fields filter to trim the response"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("playlist_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetPlaylist(ctx, id, req.GetString("fields", "")))
+		})
+
+	s.AddTool(mcp.NewTool("playlist_reorder",
+		mcp.WithDescription("Reorder items in a playlist: move a block starting at range_start (length range_length) to before insert_before."),
+		mcp.WithString("playlist_id", mcp.Required(), mcp.Description("Playlist id")),
+		mcp.WithNumber("range_start", mcp.Required(), mcp.Description("Index of the first item to move (0-based)")),
+		mcp.WithNumber("insert_before", mcp.Required(), mcp.Description("Index to insert the moved block before")),
+		mcp.WithNumber("range_length", mcp.Description("How many items to move"), mcp.DefaultNumber(1)),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireString("playlist_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return rawText(sp.PlaylistReorder(ctx, id, req.GetInt("range_start", 0), req.GetInt("insert_before", 0), req.GetInt("range_length", 1)))
+	})
 
 	s.AddTool(mcp.NewTool("playlist_create",
 		mcp.WithDescription("Create a playlist for the current user (POST /me/playlists, the Feb-2026 path)."),
@@ -347,6 +396,79 @@ func registerLibrary(s *server.MCPServer, sp *spotify.Client) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return rawText(sp.FollowingList(ctx, req.GetInt("limit", 50)))
 		})
+
+	s.AddTool(mcp.NewTool("saved_tracks", mcp.WithDescription("List the user's saved (Liked Songs) tracks."),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.SavedTracks(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+
+	s.AddTool(mcp.NewTool("saved_albums", mcp.WithDescription("List the user's saved albums."),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return rawText(sp.SavedAlbums(ctx, req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
+}
+
+// ---- catalog (object lookups) --------------------------------------------
+
+func registerCatalog(s *server.MCPServer, sp *spotify.Client) {
+	s.AddTool(mcp.NewTool("get_track", mcp.WithDescription("Get a single track's metadata by id, URI, or URL."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Track id, spotify:track: URI, or open.spotify.com URL"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetTrack(ctx, id))
+		})
+
+	s.AddTool(mcp.NewTool("get_album", mcp.WithDescription("Get a single album's metadata (includes its track list)."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Album id, URI, or URL"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetAlbum(ctx, id))
+		})
+
+	s.AddTool(mcp.NewTool("get_artist", mcp.WithDescription("Get a single artist's metadata by id, URI, or URL."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Artist id, URI, or URL"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.GetArtist(ctx, id))
+		})
+
+	s.AddTool(mcp.NewTool("album_tracks", mcp.WithDescription("List the tracks on an album (paginated)."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Album id, URI, or URL")),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(50)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.AlbumTracks(ctx, id, req.GetInt("limit", 50), req.GetInt("offset", 0)))
+		})
+
+	s.AddTool(mcp.NewTool("artist_albums", mcp.WithDescription("List an artist's albums/singles."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Artist id, URI, or URL")),
+		mcp.WithString("include_groups", mcp.Description("Comma-separated: album,single,appears_on,compilation")),
+		mcp.WithNumber("limit", mcp.Description("Max, 1-50"), mcp.DefaultNumber(20)),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return rawText(sp.ArtistAlbums(ctx, id, req.GetString("include_groups", ""), req.GetInt("limit", 20), req.GetInt("offset", 0)))
+		})
 }
 
 // ---- taste / recommendations ---------------------------------------------
@@ -361,11 +483,28 @@ func registerTaste(s *server.MCPServer, sp *spotify.Client) {
 		})
 
 	s.AddTool(mcp.NewTool("recommend",
-		mcp.WithDescription("Taste-based recommendations (replaces the deprecated /recommendations). Seeds from your top artists/tracks, returns fresh tracks not already in your library."),
+		mcp.WithDescription("Taste-based recommendations (replaces the deprecated /recommendations), returning fresh tracks not already in your library. With no seeds it uses your top artists/tracks; provide seed_artists, seed_tracks, and/or genres to steer it (e.g. \"like artist X\")."),
 		mcp.WithNumber("limit", mcp.Description("How many tracks to return"), mcp.DefaultNumber(30)),
-		mcp.WithNumber("per_artist", mcp.Description("Max tracks per seed artist"), mcp.DefaultNumber(3)),
+		mcp.WithNumber("per_artist", mcp.Description("Max tracks per seed"), mcp.DefaultNumber(3)),
+		mcp.WithArray("seed_artists", mcp.Description("Artist names, ids, or URIs to seed from"), mcp.WithStringItems()),
+		mcp.WithArray("seed_tracks", mcp.Description("Track ids/URIs; their artists are used as seeds"), mcp.WithStringItems()),
+		mcp.WithArray("genres", mcp.Description("Genre names to seed from (searched as genre:<name>)"), mcp.WithStringItems()),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		recs, err := sp.RecommendFromTaste(ctx, req.GetInt("limit", 30), req.GetInt("per_artist", 3))
+		limit := req.GetInt("limit", 30)
+		perArtist := req.GetInt("per_artist", 3)
+		seedArtists := req.GetStringSlice("seed_artists", nil)
+		seedTracks := req.GetStringSlice("seed_tracks", nil)
+		genres := req.GetStringSlice("genres", nil)
+
+		var (
+			recs []spotify.Recommendation
+			err  error
+		)
+		if len(seedArtists) > 0 || len(seedTracks) > 0 || len(genres) > 0 {
+			recs, err = sp.RecommendBySeeds(ctx, seedArtists, seedTracks, genres, limit, perArtist)
+		} else {
+			recs, err = sp.RecommendFromTaste(ctx, limit, perArtist)
+		}
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

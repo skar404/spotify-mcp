@@ -30,6 +30,22 @@ func TestArtistURIs(t *testing.T) {
 	}
 }
 
+func TestBareID(t *testing.T) {
+	cases := map[string]string{
+		"3IkfGuitetzrJWUiBj0V7s":                             "3IkfGuitetzrJWUiBj0V7s",
+		"spotify:track:3IkfGuitetzrJWUiBj0V7s":               "3IkfGuitetzrJWUiBj0V7s",
+		"spotify:artist:69v4ZOOomf1TNp59YYB1j7":              "69v4ZOOomf1TNp59YYB1j7",
+		"https://open.spotify.com/track/3IkfGuitetzrJWUiBj0": "3IkfGuitetzrJWUiBj0",
+		"https://open.spotify.com/album/1ATL5GLyefJ?si=abc":  "1ATL5GLyefJ",
+		"  spotify:track:padded  ":                           "padded",
+	}
+	for in, want := range cases {
+		if got := bareID(in); got != want {
+			t.Errorf("bareID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestSearchLimitClamp(t *testing.T) {
 	for _, c := range []struct{ in, want int }{{0, 5}, {1, 1}, {10, 10}, {11, 10}, {50, 10}} {
 		if got := searchLimit(c.in); got != c.want {

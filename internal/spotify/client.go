@@ -12,8 +12,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
+
+// maxRetries bounds how many times do() retries a 429 (rate-limited) response.
+const maxRetries = 3
 
 const apiBase = "https://api.spotify.com/v1"
 
@@ -38,36 +43,65 @@ func (e *APIError) Error() string {
 }
 
 // do performs a request and returns the raw body, or an *APIError on non-2xx.
+// On HTTP 429 it honours the Retry-After header and retries up to maxRetries.
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any) ([]byte, error) {
 	u := apiBase + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
 	}
-	var rdr io.Reader
+	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		rdr = bytes.NewReader(b)
+		payload = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, rdr)
-	if err != nil {
-		return nil, err
+
+	for attempt := 0; ; attempt++ {
+		var rdr io.Reader
+		if payload != nil {
+			rdr = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, u, rdr)
+		if err != nil {
+			return nil, err
+		}
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			wait := retryAfter(resp, attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, &APIError{Status: resp.StatusCode, Path: method + " " + path, Body: strings.TrimSpace(string(data))}
+		}
+		return data, nil
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+}
+
+// retryAfter derives how long to wait before retrying a 429. It prefers the
+// Retry-After header (seconds); otherwise it backs off exponentially.
+func retryAfter(resp *http.Response, attempt int) time.Duration {
+	if v := resp.Header.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs >= 0 {
+			return time.Duration(secs)*time.Second + 250*time.Millisecond
+		}
 	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &APIError{Status: resp.StatusCode, Path: method + " " + path, Body: strings.TrimSpace(string(data))}
-	}
-	return data, nil
+	return time.Duration(1<<attempt) * time.Second
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any) error {

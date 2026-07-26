@@ -52,6 +52,24 @@ type Playlist struct {
 	} `json:"external_urls"`
 }
 
+// bareID extracts the bare Spotify id from an id, a spotify:kind:id URI, or an
+// open.spotify.com/kind/id URL. Used for single-object catalog GETs.
+func bareID(idOrURIorURL string) string {
+	s := strings.TrimSpace(idOrURIorURL)
+	if i := strings.Index(s, "open.spotify.com/"); i >= 0 {
+		s = s[i+len("open.spotify.com/"):]
+		if q := strings.IndexAny(s, "?#"); q >= 0 {
+			s = s[:q]
+		}
+		parts := strings.Split(strings.Trim(s, "/"), "/")
+		return parts[len(parts)-1] // .../track/<id>
+	}
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		return s[i+1:] // spotify:track:<id>
+	}
+	return s
+}
+
 func trackURI(idOrURI string) string {
 	if strings.HasPrefix(idOrURI, "spotify:") {
 		return idOrURI

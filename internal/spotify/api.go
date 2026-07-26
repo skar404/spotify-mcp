@@ -183,6 +183,46 @@ func (c *Client) QueueAdd(ctx context.Context, idOrURI, deviceID string) error {
 	return err
 }
 
+// Shuffle toggles shuffle mode on the active (or given) device.
+func (c *Client) Shuffle(ctx context.Context, state bool, deviceID string) error {
+	q := deviceQuery(deviceID)
+	if q == nil {
+		q = url.Values{}
+	}
+	q.Set("state", strconv.FormatBool(state))
+	_, err := c.do(ctx, http.MethodPut, "/me/player/shuffle", q, nil)
+	return err
+}
+
+// Repeat sets repeat mode: "track", "context", or "off".
+func (c *Client) Repeat(ctx context.Context, state, deviceID string) error {
+	switch state {
+	case "track", "context", "off":
+	default:
+		return fmt.Errorf("repeat state must be track, context, or off (got %q)", state)
+	}
+	q := deviceQuery(deviceID)
+	if q == nil {
+		q = url.Values{}
+	}
+	q.Set("state", state)
+	_, err := c.do(ctx, http.MethodPut, "/me/player/repeat", q, nil)
+	return err
+}
+
+// CurrentlyPlaying returns the raw currently-playing item (lighter than the
+// full player state).
+func (c *Client) CurrentlyPlaying(ctx context.Context) (json.RawMessage, error) {
+	data, err := c.do(ctx, http.MethodGet, "/me/player/currently-playing", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return json.RawMessage(`{"note":"nothing playing"}`), nil
+	}
+	return json.RawMessage(data), nil
+}
+
 // QueueGet returns the raw upcoming queue.
 func (c *Client) QueueGet(ctx context.Context) (json.RawMessage, error) {
 	return c.getRaw(ctx, "/me/player/queue", nil)
@@ -282,6 +322,34 @@ func (c *Client) ChangePlaylistDetails(ctx context.Context, id, name, descriptio
 	return err
 }
 
+// GetPlaylist returns a playlist's raw metadata. If fields is non-empty it is
+// passed through as the Spotify `fields` filter to trim the response.
+func (c *Client) GetPlaylist(ctx context.Context, id, fields string) (json.RawMessage, error) {
+	q := url.Values{}
+	if fields != "" {
+		q.Set("fields", fields)
+	}
+	if m := c.Market(ctx); m != "" {
+		q.Set("market", m)
+	}
+	return c.getRaw(ctx, "/playlists/"+bareID(id), q)
+}
+
+// PlaylistReorder moves a contiguous block of items within a playlist.
+// rangeStart is the index of the first item to move, rangeLength how many
+// (defaults to 1), and insertBefore the index to drop them before.
+func (c *Client) PlaylistReorder(ctx context.Context, id string, rangeStart, insertBefore, rangeLength int) (json.RawMessage, error) {
+	if rangeLength <= 0 {
+		rangeLength = 1
+	}
+	body := map[string]any{
+		"range_start":   rangeStart,
+		"insert_before": insertBefore,
+		"range_length":  rangeLength,
+	}
+	return c.do(ctx, http.MethodPut, "/playlists/"+bareID(id)+"/items", nil, body)
+}
+
 // UploadCover sets a playlist cover from base64-encoded JPEG bytes.
 func (c *Client) UploadCover(ctx context.Context, id, jpegBase64 string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
@@ -320,6 +388,28 @@ func (c *Client) LibraryContains(ctx context.Context, uris []string) (json.RawMe
 	q := url.Values{}
 	q.Set("uris", strings.Join(uris, ","))
 	return c.getRaw(ctx, "/me/library/contains", q)
+}
+
+// SavedTracks lists the user's saved ("Liked Songs") tracks.
+func (c *Client) SavedTracks(ctx context.Context, limit, offset int) (json.RawMessage, error) {
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(clamp(limit, 1, 50, 20)))
+	q.Set("offset", strconv.Itoa(offset))
+	if m := c.Market(ctx); m != "" {
+		q.Set("market", m)
+	}
+	return c.getRaw(ctx, "/me/tracks", q)
+}
+
+// SavedAlbums lists the user's saved albums.
+func (c *Client) SavedAlbums(ctx context.Context, limit, offset int) (json.RawMessage, error) {
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(clamp(limit, 1, 50, 20)))
+	q.Set("offset", strconv.Itoa(offset))
+	if m := c.Market(ctx); m != "" {
+		q.Set("market", m)
+	}
+	return c.getRaw(ctx, "/me/albums", q)
 }
 
 // FollowingList returns followed artists.

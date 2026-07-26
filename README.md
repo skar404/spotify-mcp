@@ -19,8 +19,12 @@ The Feb-2026 migration changed the write endpoints for Development-mode apps:
 
 Removed for Dev mode (this server avoids them): `GET /recommendations`,
 `/artists/{id}/top-tracks`, related-artists, audio-features, `/browse/*`,
-batch gets, `GET /users/{id}`. Recommendations are rebuilt from
-`GET /me/top/*` + search instead.
+**batch** gets (`GET /tracks?ids=…`), `GET /markets`, `GET /users/{id}`.
+Recommendations are rebuilt from `GET /me/top/*` + search instead.
+
+Still available and used by the catalog tools: **single-object** gets
+(`GET /tracks/{id}`, `/albums/{id}`, `/artists/{id}`), `/artists/{id}/albums`
+and `/albums/{id}/tracks` (verified live against a Development-mode app).
 
 ## Install
 
@@ -70,13 +74,17 @@ IP literal (`http://127.0.0.1:8080/callback`, not `localhost`).
 ## Tools
 
 Profile: `me`. Search: `search`, `search_tracks` (limit capped at 10).
-Playback: `playback_state`, `devices_list`, `transfer_playback`, `play`,
-`pause`, `next`, `previous`, `seek`, `set_volume`. Queue: `queue_add`,
-`queue_get`, `recently_played`. Playlists: `playlists_list`, `playlist_items`,
-`playlist_create`, `playlist_add_items`, `playlist_remove_items`,
+Playback: `playback_state`, `now_playing`, `devices_list`, `transfer_playback`,
+`play`, `pause`, `next`, `previous`, `seek`, `set_volume`, `shuffle`, `repeat`.
+Queue: `queue_add`, `queue_get`, `recently_played`. Playlists:
+`playlists_list`, `playlist_items`, `get_playlist`, `playlist_create`,
+`playlist_add_items`, `playlist_remove_items`, `playlist_reorder`,
 `playlist_change_details`, `playlist_upload_cover`. Library/follow:
-`library_save`, `library_remove`, `library_contains`, `follow_artists`,
-`unfollow_artists`, `following_list`. Taste: `top_items`, `recommend`.
+`library_save`, `library_remove`, `library_contains`, `saved_tracks`,
+`saved_albums`, `follow_artists`, `unfollow_artists`, `following_list`.
+Catalog: `get_track`, `get_album`, `get_artist`, `album_tracks`,
+`artist_albums`. Taste: `top_items`, `recommend` (optionally seeded with
+`seed_artists` / `seed_tracks` / `genres`).
 
 ### Restricted devices (speakers)
 
